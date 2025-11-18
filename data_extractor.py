@@ -2,75 +2,158 @@ import spacy
 from typing import Dict, List, Any
 from collections import defaultdict
 import re
+# YENİ KÜTÜPHANELER: İleri NER (transformers) entegrasyonu için burada çağrılacaktır.
 
-# SpaCy modelini yükleyin
+# --- MODEL YÜKLEME VE FALLBACK MANTIĞI ---
+
+# Custom NER model yolunu veya Hugging Face model adını buraya girin (Gelecekteki geliştirme)
+CUSTOM_NER_MODEL_NAME = "en_core_web_sm" # Şimdilik temel spaCy modelini kullanıyoruz.
+
 try:
-    nlp = spacy.load("en_core_web_sm")
+    # Eğitilmiş Custom NER modelini yüklemeyi dene
+    nlp = spacy.load(CUSTOM_NER_MODEL_NAME)
+    print(f"NLP: '{CUSTOM_NER_MODEL_NAME}' modeli başarıyla yüklendi.")
 except OSError:
-    print("SpaCy modeli yüklenemedi. Kurulumu kontrol edin.")
-    nlp = None
+    print(f"HATA: '{CUSTOM_NER_MODEL_NAME}' modeli bulunamadi. Temel spaCy modeline geri donuluyor.")
+    try:
+        # Custom model yoksa temel modeli kullan
+        nlp = spacy.load("en_core_web_sm")
+        print("NLP: Temel 'en_core_web_sm' modeli yüklendi.")
+    except Exception as e:
+        print(f"KRİTİK HATA: Hiçbir spaCy modeli yüklenemedi. NLP islemleri yapilamayacak. Hata: {e}")
+        nlp = None
 
-# -------------------------- ÇIKARIM FONKSİYONLARI --------------------------
+# --- DETAYLI ALAN ÇIKARIMI FONKSİYONLARI ---
 
 def extract_skills(text: str) -> List[str]:
-    """Yetenekler bölümünden anahtar kelimeleri çıkarır."""
+    """Yetenekler bölümünden anahtar kelimeleri/teknolojileri çıkarır (Basit kural tabanlı)."""
     if not text:
         return []
         
-    skills = [s.strip() for s in re.split(r'[,;•\n]', text) if len(s.strip()) > 2]
-    return list(set(skills))
+    # Geliştirme: Yetenekleri daha temiz ayırmak için virgül, nokta, yeni satır vb. karakterleri kullan.
+    skills = [s.strip() for s in re.split(r'[,;•\n\t]', text) if len(s.strip()) > 2 and s.strip().count(' ') < 4]
+    
+    # Fazla boşlukları, küçük harfe çevirmeleri ve tekrarları kaldır.
+    return list(set([s.lower() for s in skills if s]))
+
 
 def extract_experience_details(experience_text: str) -> List[Dict[str, str]]:
-    """Deneyim metninden NLP/Regex ile detaylı verileri (tarih, kurum, pozisyon) çıkarır."""
+    """
+    Deneyim metninden (Custom NER veya spaCy) pozisyon, kurum ve tarihleri çıkarır.
+    
+    AMAÇ: Her bir deneyim girdisini (örneğin 2020-2023 arası ABC Teknoloji) ayrı ayrı yapılandırmak.
+    """
     if not nlp or not experience_text:
         return []
 
     doc = nlp(experience_text)
     experiences = []
     
-    # Basit Heuristik: SpaCy'nin hazır NER etiketlerini kullan
-    current_exp = defaultdict(str)
+    # Bu basit bir yer tutucudur. Gerçek Custom NER, doğru etiketleri (LABEL: COMPANY, LABEL: TITLE) sağlayacaktır.
+    current_experience = defaultdict(str)
     
-    for ent in doc.ents:
-        if ent.label_ == "DATE":
-            current_exp["Tarih"] += ent.text + " "
-        elif ent.label_ == "ORG" or ent.label_ == "GPE":
-             if not current_exp["Kurum"]:
-                 current_exp["Kurum"] = ent.text
+    # Heuristik: Paragraf sonlarını kullanarak deneyimleri ayırmaya çalış
+    experience_entries = experience_text.split('\n\n')
     
-    # Gerçek projede custom NER ile daha isabetli pozisyon ve kurum çıkarımı yapılmalıdır.
-    sentences = [sent.text.strip() for sent in doc.sents]
-    if sentences:
-        current_exp["Pozisyon"] = sentences[0].split('|')[1].strip() if '|' in sentences[0] else sentences[0]
-        current_exp["Açıklama"] = " ".join(sentences[1:])
-    
-    if current_exp.get("Kurum") or current_exp.get("Pozisyon"):
-        experiences.append(dict(current_exp))
-    
+    for entry in experience_entries:
+        if not entry.strip():
+            continue
+
+        entry_doc = nlp(entry.strip())
+        
+        details = defaultdict(str)
+        # SpaCy'nin hazır etiketlerini kullan (geçici NER)
+        for ent in entry_doc.ents:
+            if ent.label_ in ["DATE", "GPE"]: # GPE: Şehir, Ülke gibi yerler
+                details["Tarih"] += ent.text + " "
+            elif ent.label_ == "ORG": # ORG: Organizasyon (Kurum Adı olabilir)
+                if not details["Kurum"]:
+                    details["Kurum"] = ent.text
+        
+        # Heuristik: Entry'nin başlığını (genellikle ilk cümle) pozisyon/kurum olarak kullan
+        first_line = entry.split('\n')[0].strip()
+        details["Raw_Entry"] = first_line
+        
+        # Eğer bir Kurum veya Tarih çıkarıldıysa kaydet
+        if details.get("Kurum") or details.get("Tarih"):
+            experiences.append(dict(details))
+            
+    # Eğer deneyimler ayrılamadıysa, tüm metni tek bir girdi olarak döndür
+    if not experiences and experience_text.strip():
+         experiences.append({"Raw_Entry": experience_text.strip()})
+
     return experiences
 
-# -------------------------- ANA ÇIKARIM FONKSİYONU --------------------------
 
+def extract_education_details(education_text: str) -> List[Dict[str, str]]:
+    """Eğitim metninden kurum, derece ve tarihleri çıkarır."""
+    if not nlp or not education_text:
+        return []
+
+    # Eğitim verisi de Deneyim verisine benzer şekilde işlenebilir.
+    education_entries = education_text.split('\n\n')
+    education_list = []
+
+    for entry in education_entries:
+        if not entry.strip():
+            continue
+        
+        details = defaultdict(str)
+        entry_doc = nlp(entry.strip())
+        
+        for ent in entry_doc.ents:
+             if ent.label_ in ["DATE"]:
+                details["Tarih"] += ent.text + " "
+             elif ent.label_ in ["ORG"]:
+                details["Kurum"] = ent.text
+
+        details["Raw_Entry"] = entry.strip()
+        
+        if details.get("Raw_Entry"):
+            education_list.append(dict(details))
+
+    return education_list
+
+
+# --- ANA ÇIKARIM FONKSİYONU ---
 def extract_structured_data(sections: Dict[str, str]) -> Dict[str, Any]:
-    """Tüm CV bölümlerinden yapılandırılmış veriyi çıkarır."""
+    """
+    Tüm bölümlerden yapılandırılmış veriyi çıkarır (Hafta 7-9 görevi).
+    """
     structured_data = {
         "DENEYİM": [],
         "EĞİTİM": [],
         "YETENEKLER": [],
+        "SERTİFİKALAR": [], # Yeni eklenecek alanlar
+        "PROJELER": [],     # Yeni eklenecek alanlar
         "ÖZET": sections.get("ÖZET", sections.get("SUMMARY", ""))
     }
     
+    # 1. Deneyim Çıkarımı
     experience_text = sections.get("DENEYİM", sections.get("EXPERIENCE", ""))
     if experience_text:
         structured_data["DENEYİM"] = extract_experience_details(experience_text)
         
+    # 2. Eğitim Çıkarımı
+    education_text = sections.get("EĞİTİM", sections.get("EDUCATION", ""))
+    if education_text:
+        structured_data["EĞİTİM"] = extract_education_details(education_text)
+        
+    # 3. Yetenek Çıkarımı
     skills_text = sections.get("YETENEKLER", sections.get("SKILLS", ""))
     if skills_text:
         structured_data["YETENEKLER"] = extract_skills(skills_text)
 
-    # Eğitim ve diğer alanlar da benzer şekilde işlenmelidir.
-    education_text = sections.get("EĞİTİM", sections.get("EDUCATION", ""))
-    if education_text:
-         structured_data["EĞİTİM"].append({"Kurum/Derece": education_text.split('|')[0].strip()})
+    # 4. Sertifikalar Çıkarımı (Sadece metni al)
+    # İleride NER ile Sertifika Adı ve Veriliş Tarihi gibi alt alanlar çıkarılmalıdır.
+    certs_text = sections.get("SERTİFİKALAR", sections.get("CERTIFICATIONS", ""))
+    if certs_text:
+        structured_data["SERTİFİKALAR"].append({"Raw_Entry": certs_text.strip()})
+
+    # 5. Projeler Çıkarımı (Sadece metni al)
+    projects_text = sections.get("PROJELER", "")
+    if projects_text:
+        structured_data["PROJELER"].append({"Raw_Entry": projects_text.strip()})
+
 
     return structured_data
