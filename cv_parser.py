@@ -31,9 +31,14 @@ def extract_sections_simple(text: str) -> Dict[str, str]:
     """Basit kural tabanlı bölüm tespiti (regex + layout cues) yapar[cite: 23]."""
     # Proje planındaki ortak alanları içeren yaygın başlıklar[cite: 3].
     section_titles = [
-        "EĞİTİM", "Egitim", "DENEYİM", "Deneyim", "YETENEKLER", "Yetenekler", 
-        "SKILLS", "EXPERIENCE", "EDUCATION", "SUMMARY", "ÖZET", "CONTACT", 
-        "İLETİŞİM", "PROJELER", "SERTİFİKALAR", "CERTIFICATIONS"
+        "EĞİTİM", "Egitim", "DENEYİM", "Deneyim", "YETENEKLER", "Yetenekler",
+        "TEKNİK BECERİLER", "TEKNIK BECERILER", "TEKNİK", "TECHNICAL SKILLS",
+        "YABANCI DİL", "YABANCI DİLLER", "LANGUAGES", "DİL", "DIL",
+        "KURSLAR", "KURS", "COURSES",
+        "SERTİFİKALAR", "CERTIFICATIONS",
+        "KİŞİSEL BECERİLER", "KISISEL BECERILER", "PERSONAL SKILLS",
+        "REFERANSLAR", "REFERANS", "REFERENCES",
+        "SKILLS", "EXPERIENCE", "EDUCATION", "SUMMARY", "ÖZET", "CONTACT", "İLETİŞİM", "PROJELER"
     ]
     
     # Başlıkları yakalamak için regex paterni
@@ -72,8 +77,7 @@ def parse_cv(pdf_path: str) -> Dict[str, str]:
     raw_text = extract_text_from_pdf(pdf_path)
     if not raw_text:
         return {}
-    
-    processed_text = preprocess_text(raw_text)
-    sections = extract_sections_simple(processed_text)
+    # Keep original newlines for reliable section heading detection
+    sections = extract_sections_simple(raw_text)
     
     return sections
