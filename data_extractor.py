@@ -37,6 +37,56 @@ def extract_skills(text: str) -> List[str]:
     return list(set([s.lower() for s in skills if s]))
 
 
+def extract_languages(text: str) -> List[Dict[str, str]]:
+    """Basitçe yabancı dil ve seviyesini çıkarır. Satır veya virgülle ayrılmış girdileri işler."""
+    if not text:
+        return []
+
+    parts = [p.strip() for p in re.split(r'[;,\n\t•-]', text) if p.strip()]
+    langs = []
+    level_pattern = re.compile(r"(advanced|intermediate|basic|fluent|beginner|ileri|orta|başlangıç|başlangic|çok iyi|iyi)", re.I)
+    for p in parts:
+        match = level_pattern.search(p)
+        if match:
+            level = match.group(0)
+            name = level_pattern.sub('', p).strip(' -,:;')
+            langs.append({"dil": name, "seviyesi": level})
+        else:
+            # Eğer virgülden önce/proficiency yoksa sadece dil ismi kaydet
+            langs.append({"dil": p, "seviyesi": ""})
+
+    return langs
+
+
+def extract_references(text: str) -> List[Dict[str, str]]:
+    """Referans metninden e-posta ve telefon numarası arar ve temel alanları çıkarır."""
+    if not text:
+        return []
+
+    entries = [e.strip() for e in re.split(r'\n\n|\n-\s|\n•|;|\n', text) if e.strip()]
+    refs = []
+    email_re = re.compile(r"[\w\.-]+@[\w\.-]+")
+    phone_re = re.compile(r"\+?\d[\d\s\-\(\)]{6,}\d")
+
+    for e in entries:
+        ref = {"raw": e, "email": "", "phone": "", "name": ""}
+        em = email_re.search(e)
+        ph = phone_re.search(e)
+        if em:
+            ref['email'] = em.group(0)
+        if ph:
+            ref['phone'] = ph.group(0)
+
+        # Basit isim tahmini: eğer virgül yoksa ilk kelimeler isim olabilir
+        name = e.split('\n')[0]
+        # temizle
+        name = re.sub(r"\b(Email:|E-mail:|Tel:|Phone:|Telefon:)\b.*", '', name, flags=re.I).strip()
+        ref['name'] = name
+        refs.append(ref)
+
+    return refs
+
+
 def extract_experience_details(experience_text: str) -> List[Dict[str, str]]:
     """
     Deneyim metninden (Custom NER veya spaCy) pozisyon, kurum ve tarihleri çıkarır.
@@ -126,6 +176,11 @@ def extract_structured_data(sections: Dict[str, str]) -> Dict[str, Any]:
         "YETENEKLER": [],
         "SERTİFİKALAR": [], # Yeni eklenecek alanlar
         "PROJELER": [],     # Yeni eklenecek alanlar
+        "TEKNİK_BECERİLER": [],
+        "YABANCI_DİL": [],
+        "KURSLAR": [],
+        "KİŞİSEL_BECERİLER": [],
+        "REFERANSLAR": [],
         "ÖZET": sections.get("ÖZET", sections.get("SUMMARY", ""))
     }
     
@@ -144,16 +199,43 @@ def extract_structured_data(sections: Dict[str, str]) -> Dict[str, Any]:
     if skills_text:
         structured_data["YETENEKLER"] = extract_skills(skills_text)
 
+    # 3b. Teknik Beceriler (ayrı bir bölüm varsa)
+    tech_text = sections.get("TEKNİK BECERİLER", sections.get("TEKNIK BECERILER", ""))
+    if tech_text:
+        structured_data["TEKNİK_BECERİLER"] = extract_skills(tech_text)
+
     # 4. Sertifikalar Çıkarımı (Sadece metni al)
     # İleride NER ile Sertifika Adı ve Veriliş Tarihi gibi alt alanlar çıkarılmalıdır.
     certs_text = sections.get("SERTİFİKALAR", sections.get("CERTIFICATIONS", ""))
     if certs_text:
         structured_data["SERTİFİKALAR"].append({"Raw_Entry": certs_text.strip()})
 
+    # 4b. Kurslar
+    courses_text = sections.get("KURSLAR", sections.get("COURSES", ""))
+    if courses_text:
+        structured_data["KURSLAR"].append({"Raw_Entry": courses_text.strip()})
+
+    # 5. Projeler Çıkarımı (Sadece metni al)
+
     # 5. Projeler Çıkarımı (Sadece metni al)
     projects_text = sections.get("PROJELER", "")
     if projects_text:
         structured_data["PROJELER"].append({"Raw_Entry": projects_text.strip()})
+
+    # 6. Yabancı Dil
+    languages_text = sections.get("YABANCI DİL", sections.get("YABANCI DİLLER", sections.get("LANGUAGES", "")))
+    if languages_text:
+        structured_data["YABANCI_DİL"] = extract_languages(languages_text)
+
+    # 7. Kişisel Beceriler
+    personal_text = sections.get("KİŞİSEL BECERİLER", sections.get("KISISEL BECERILER", sections.get("PERSONAL SKILLS", "")))
+    if personal_text:
+        structured_data["KİŞİSEL_BECERİLER"] = extract_skills(personal_text)
+
+    # 8. Referanslar
+    refs_text = sections.get("REFERANSLAR", sections.get("REFERANS", sections.get("REFERENCES", "")))
+    if refs_text:
+        structured_data["REFERANSLAR"] = extract_references(refs_text)
 
 
     return structured_data
