@@ -7,3 +7,4 @@ spacy
 sentence-transformers
 scikit-learn
 streamlit
+torch

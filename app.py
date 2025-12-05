@@ -52,7 +52,6 @@ else:
                 data_list.append(d)
                 labels.append(label)
 
-        # Keep filename with each entry and a display name (filename without extension)
         paired = []
         for i in range(len(data_list)):
             if not data_list[i]:
@@ -93,7 +92,6 @@ else:
                 section_scores = comp[2]
                 for s in section_scores.keys():
                     all_sections.add(s)
-            # ensure some default ordered keys and include discovered ones
             ordered_keys = ['DENEYİM', 'YETENEKLER', 'TEKNİK_BECERİLER', 'EĞİTİM', 'YABANCI_DİL', 'SERTİFİKALAR', 'KURSLAR', 'ÖZET']
             for s in all_sections:
                 if s not in ordered_keys:
