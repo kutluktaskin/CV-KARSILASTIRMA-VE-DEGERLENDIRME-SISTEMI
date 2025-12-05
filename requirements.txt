@@ -1,0 +1,9 @@
+pdfplumber
+easyocr
+PyMuPDF
+numpy
+opencv-python
+spacy
+sentence-transformers
+scikit-learn
+streamlit
