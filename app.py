@@ -1,3 +1,5 @@
+"""CV karşılaştırma ve değerlendirme sistemi web arayüzü."""
+
 import streamlit as st
 import os
 import pandas as pd
@@ -6,7 +8,6 @@ from data_extractor import extract_structured_data
 from comparison_engine import compare_cv_data, generate_report
 from typing import Dict, Any, List
 
-# Ensure data folder
 if not os.path.exists("data"):
     os.makedirs("data")
 
@@ -27,10 +28,8 @@ def run_full_analysis(cv_file, name: str) -> Dict[str, Any]:
 st.title("👨‍💻 CV Karşılaştırma ve Değerlendirme Sistemi")
 st.subheader("Birden fazla CV yükleyip karşılaştırabilirsiniz.")
 
-# CV sayısı seçimi
 num_cvs = st.slider("Kaç CV yüklenecek? (En az 2, en fazla 20)", min_value=2, max_value=20, value=2)
 
-# Dinamik yükleyiciler (2 sütun)
 uploaded_files = []
 cols = st.columns(2)
 for i in range(num_cvs):
@@ -53,7 +52,6 @@ else:
                 data_list.append(d)
                 labels.append(label)
 
-        # Keep filename with each entry and a display name (filename without extension)
         paired = []
         for i in range(len(data_list)):
             if not data_list[i]:
@@ -64,7 +62,6 @@ else:
         if len(paired) < 2:
             st.error("Yüklenen dosyalardan en az iki tanesi okunabilir olmalı.")
         else:
-            # helper to count items in a section for a given structured data
             def count_for_section(data, section_key):
                 v = data.get(section_key)
                 if v is None:
@@ -78,8 +75,7 @@ else:
                 except Exception:
                     return 1
 
-            # Prepare all-pairs comparisons (A vs B vs C style aggregated)
-            comparisons = []  # list of (pair_label, total_score, section_scores, report_lines)
+            comparisons = []
             n = len(paired)
             for i in range(n):
                 for j in range(i + 1, n):
@@ -88,44 +84,36 @@ else:
                     pair_label = f"{display_i} vs {display_j}"
                     total_score, section_scores = compare_cv_data(data_i, data_j)
                     report_lines = generate_report(data_i, data_j, total_score, section_scores)
-                    # store pair-level data so we can compute same/different features later
                     comparisons.append((pair_label, total_score, section_scores, report_lines, display_i, display_j, data_i, data_j))
 
-            # Aggregate section scores across comparisons (average)
             agg_scores = {}
             all_sections = set()
             for comp in comparisons:
                 section_scores = comp[2]
                 for s in section_scores.keys():
                     all_sections.add(s)
-            # ensure some default ordered keys and include discovered ones
             ordered_keys = ['DENEYİM', 'YETENEKLER', 'TEKNİK_BECERİLER', 'EĞİTİM', 'YABANCI_DİL', 'SERTİFİKALAR', 'KURSLAR', 'ÖZET']
             for s in all_sections:
                 if s not in ordered_keys:
                     ordered_keys.append(s)
 
-            # enforce 'ÖZET' to be at index 7 (8th row)
             if 'ÖZET' in ordered_keys:
                 ordered_keys = [k for k in ordered_keys if k != 'ÖZET']
                 insert_index = min(7, len(ordered_keys))
                 ordered_keys.insert(insert_index, 'ÖZET')
 
-            # compute average similarity per section across all pairs
             for section in ordered_keys:
                 vals = [comp[2].get(section, 0.0) for comp in comparisons]
                 agg_scores[section] = sum(vals) / len(vals) if vals else 0.0
 
-            # Build unified table rows: Alan, Benzerlik Skoru (avg of comparisons), then Aday <label> Öğeleri for each uploaded CV
             rows = []
             for section in ordered_keys:
                 row = {'Alan': section, 'Benzerlik Skoru': f"% {agg_scores.get(section,0.0)*100:.1f}"}
-                # counts for each candidate (use original filename as column header)
                 for i, (lbl, filename, display, data) in enumerate(paired):
                     col_name = f"{display} Öğeleri"
                     row[col_name] = count_for_section(data, section)
                 rows.append(row)
 
-            # Swap 'ÖZET' and 'KİŞİSEL_BECERİLER' rows if both present (by name)
             idx_ozet = next((i for i, r in enumerate(rows) if r.get('Alan') == 'ÖZET'), None)
             idx_kisi = next((i for i, r in enumerate(rows) if r.get('Alan') == 'KİŞİSEL_BECERİLER'), None)
             if idx_ozet is not None and idx_kisi is not None:
@@ -133,10 +121,8 @@ else:
 
             scores_df = pd.DataFrame(rows)
 
-            # Ensure column order: Alan, Benzerlik Skoru, then candidate columns in label order
             candidate_cols = [f"{display} Öğeleri" for _, filename, display, _ in paired]
             cols_order = ['Alan', 'Benzerlik Skoru'] + candidate_cols
-            # add any other unexpected cols at the end
             for c in scores_df.columns:
                 if c not in cols_order:
                     cols_order.append(c)
@@ -144,19 +130,15 @@ else:
 
             st.table(scores_df)
 
-            # Show overall results below the table
-            st.balloons()
             st.header("✅ Analiz Tamamlandı")
-            # Aggregate overall score across all pairs and label as multi-way
             total_vals = [comp[1] for comp in comparisons]
             combined_label = " vs ".join([display for _, filename, display, _ in paired])
             avg_total = sum(total_vals) / len(total_vals) if total_vals else 0.0
             st.metric(label=f"Genel Benzerlik ({combined_label})", value=f"% {avg_total*100:.1f}")
             st.markdown("---")
 
-            # Show per-pair IK reports inside an expander under the combined header (detailed)
             st.subheader("İK Uzmanı Raporları")
-            # Helper to compute same/different lists for list-like sections
+            
             def same_and_diff(list_a, list_b):
                 set_a = set([str(x).strip().lower() for x in list_a if x])
                 set_b = set([str(x).strip().lower() for x in list_b if x])
@@ -165,7 +147,6 @@ else:
                 only_b = sorted(list(set_b - set_a))
                 return common, only_a, only_b
 
-            # For each pair, show detailed report plus same/different feature summary
             for pair_item in comparisons:
                 pair_label, _, _, report_lines, display_i, display_j, data_i, data_j = pair_item
                 with st.expander(pair_label, expanded=False):
@@ -175,7 +156,6 @@ else:
 
                     st.markdown("---")
                     st.write("**Aynı / Farklı Özellikler**")
-                    # compare skills-like lists
                     list_keys = [
                         ("YETENEKLER", lambda d: d.get("YETENEKLER", [])),
                         ("TEKNİK_BECERİLER", lambda d: d.get("TEKNİK_BECERİLER", [])),
@@ -195,7 +175,7 @@ else:
                         st.write(f"{display_i} ({len(only_a)}): {', '.join(only_a) if only_a else 'Yok'}")
                         st.write(f"{display_j} ({len(only_b)}): {', '.join(only_b) if only_b else 'Yok'}")
                         st.markdown("")
-            # Combine all Kurslar / Sertifikalar into single expander
+            
             all_certs = []
             for _, _, display, data in paired:
                 certs = data.get("SERTİFİKALAR", []) + data.get("KURSLAR", [])
@@ -210,12 +190,10 @@ else:
                 else:
                     st.write("Yok")
 
-            # Combine all Referanslar into single expander
             all_refs = []
             for _, _, display, data in paired:
                 refs = data.get("REFERANSLAR", [])
                 for r in refs:
-                    # r may be dict or string
                     entry = r if not isinstance(r, dict) else (r.get('name') or r.get('raw') or str(r))
                     all_refs.append((display, entry))
 
